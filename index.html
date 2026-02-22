@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Racing Retro - Secure Version</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <style>
+        body { margin: 0; background: #222; overflow: hidden; font-family: 'Courier New', Courier, monospace; }
+        canvas { display: block; background: #333; margin: 0 auto; }
+        
+        /* Overlay Start */
+        #startOverlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9); display: flex; flex-direction: column;
+            justify-content: center; align-items: center; z-index: 100;
+        }
+        #startButton {
+            padding: 15px 40px; font-size: 24px; font-weight: bold;
+            background: #ff4500; color: white; border: none; border-radius: 10px;
+            cursor: pointer; box-shadow: 0 5px #900;
+        }
+        #startButton:active { transform: translateY(4px); box-shadow: 0 2px #900; }
+        h1 { color: white; margin-bottom: 20px; text-shadow: 2px 2px #000; text-align: center; }
+        p { color: #ccc; margin-top: 10px; font-size: 14px; }
+
+        #ui { 
+            position: absolute; top: 10px; left: 10px; color: yellow; 
+            font-size: 18px; font-weight: bold; text-shadow: 2px 2px black;
+            pointer-events: none; z-index: 10;
+        }
+    </style>
+</head>
+<body>
+
+    <audio id="bgMusic" loop>
+        <source src="soundtrack.mp3" type="audio/mpeg">
+    </audio>
+
+    <div id="startOverlay">
+        <h1>RACING JADUL</h1>
+        <button id="startButton">START GAME</button>
+        <p>Kontrol: Layar Sentuh / Tombol Panah / WASD</p>
+    </div>
+
+    <div id="ui">SKOR: 0 | LEVEL: 1 | HIGH: 0</div>
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        const ui = document.getElementById("ui");
+        const startOverlay = document.getElementById("startOverlay");
+        const startButton = document.getElementById("startButton");
+        const bgMusic = document.getElementById("bgMusic");
+
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        // --- SISTEM KEAMANAN DATA (ENCAPSULATION) ---
+        const GameData = (() => {
+            let _score = 0; 
+            let _highScore = localStorage.getItem("racingHighScore") || 0;
+
+            return {
+                tambahSkor: () => { _score++; },
+                getSkor: () => _score,
+                getHighScore: () => _highScore,
+                cekHighScore: () => {
+                    if (_score > _highScore) {
+                        _highScore = _score;
+                        localStorage.setItem("racingHighScore", _highScore);
+                        return true; 
+                    }
+                    return false;
+                }
+            };
+        })();
+
+        let level = 1;
+        let gameActive = false;
+        let frameCount = 0;
+
+        const playerImg = new Image();
+        playerImg.src = "mobil.png"; 
+        const enemyImg = new Image();
+        enemyImg.src = "musuh.png"; 
+
+        const player = {
+            x: canvas.width / 2 - 30,
+            y: canvas.height - 150,
+            w: 60,
+            h: 110,
+            speed: 8
+        };
+
+        const enemies = [];
+        const keys = { Left: false, Right: false };
+
+        function updateUI() {
+            ui.innerHTML = `SKOR: ${GameData.getSkor()} | LEVEL: ${level} | HIGH: ${GameData.getHighScore()}`;
+        }
+
+        // Jalankan UI pertama kali
+        updateUI();
+
+        window.addEventListener("keydown", (e) => {
+            if (e.code === "ArrowLeft" || e.code === "KeyA") keys.Left = true;
+            if (e.code === "ArrowRight" || e.code === "KeyD") keys.Right = true;
+        });
+        window.addEventListener("keyup", (e) => {
+            if (e.code === "ArrowLeft" || e.code === "KeyA") keys.Left = false;
+            if (e.code === "ArrowRight" || e.code === "KeyD") keys.Right = false;
+        });
+
+        canvas.addEventListener("touchmove", (e) => {
+            if (!gameActive) return;
+            e.preventDefault();
+            let touchX = e.touches[0].clientX;
+            player.x = touchX - player.w / 2;
+        }, { passive: false });
+
+        startButton.addEventListener("click", () => {
+            startOverlay.style.display = "none";
+            gameActive = true;
+            bgMusic.play().catch(e => console.log("Music blocked"));
+            animate();
+        });
+
+        function createEnemy() {
+            const w = 60;
+            const x = Math.random() * (canvas.width - w);
+            const speed = 5 + (level * 1.5); 
+            enemies.push({ x: x, y: -120, w: w, h: 110, speed: speed });
+        }
+
+        function update() {
+            if (!gameActive) return;
+            frameCount++;
+
+            if (keys.Left && player.x > 0) player.x -= player.speed;
+            if (keys.Right && player.x < canvas.width - player.w) player.x += player.speed;
+
+            if (player.x < 0) player.x = 0;
+            if (player.x > canvas.width - player.w) player.x = canvas.width - player.w;
+
+            let spawnRate = Math.max(20, 70 - (level * 5));
+            if (frameCount % Math.floor(spawnRate) === 0) createEnemy();
+
+            enemies.forEach((en, index) => {
+                en.y += en.speed;
+                
+                // Tabrakan
+                if (player.x < en.x + en.w - 15 && player.x + player.w > en.x + 15 &&
+                    player.y < en.y + en.h - 15 && player.y + player.h > en.y + 15) {
+                    gameActive = false;
+                    bgMusic.pause();
+
+                    const isNewRecord = GameData.cekHighScore();
+                    alert(isNewRecord ? "REKOR BARU! SKOR: " + GameData.getSkor() : "GAME OVER! SKOR: " + GameData.getSkor());
+                    
+                    location.reload();
+                }
+
+                if (en.y > canvas.height) {
+                    enemies.splice(index, 1);
+                    GameData.tambahSkor();
+                    if (GameData.getSkor() % 10 === 0) level++;
+                    updateUI();
+                }
+            });
+        }
+
+        function animate() {
+            if (!gameActive) return;
+
+            ctx.fillStyle = "#333";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.strokeStyle = "white";
+            ctx.setLineDash([40, 40]);
+            ctx.lineDashOffset = -frameCount * (5 + level);
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(canvas.width / 2, 0);
+            ctx.lineTo(canvas.width / 2, canvas.height);
+            ctx.stroke();
+
+            ctx.drawImage(playerImg, player.x, player.y, player.w, player.h);
+            enemies.forEach(en => {
+                ctx.drawImage(enemyImg, en.x, en.y, en.w, en.h);
+            });
+
+            update();
+            requestAnimationFrame(animate);
+        }
+    </script>
+</body>
+</html>
